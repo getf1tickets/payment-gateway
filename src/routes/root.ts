@@ -88,6 +88,10 @@ const root: FastifyPluginAsync = async (fastify): Promise<void> => {
         status: pPayment.status,
       }));
 
+      await fastify.to500(order.update({
+        status: OrderStatus.WAITING_PAYMENT,
+      }));
+
       return {
         id: payment.id,
         url: pPayment.links?.find((link) => link.rel === 'approve').href,

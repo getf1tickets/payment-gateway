@@ -4,6 +4,7 @@ import { Order, OrderProduct, UUID } from '@getf1tickets/sdk';
 
 export interface PayPalGateway {
   createPayment: (order: Order) => Promise<PayPalPayment>;
+  capturePayment: (transactionId: string) => Promise<PayPalCapture>;
 }
 
 export interface PayPalPaymentUrl {
@@ -18,6 +19,11 @@ export interface PayPalPayment {
   links: PayPalPaymentUrl[];
 }
 
+export interface PayPalCapture {
+  id: string;
+  status: string;
+}
+
 export default fp(async (fastify) => {
   const environment = new paypal.core.SandboxEnvironment(
     process.env.PAYPAL_CLIENT_ID,
@@ -28,8 +34,8 @@ export default fp(async (fastify) => {
   const buildPaymentBody = (orderId: UUID, products: OrderProduct[], total: number) => ({
     intent: 'CAPTURE',
     application_context: {
-      return_url: 'https://www.example.com',
-      cancel_url: 'https://www.example.com',
+      return_url: process.env.PAYPAL_CALLBACK_VALID_URL,
+      cancel_url: process.env.PAYPAL_CALLBACK_CANCEL_URL,
       brand_name: 'F1 Tickets',
       locale: 'en-US',
       landing_page: 'NO_PREFERENCE',
@@ -66,15 +72,31 @@ export default fp(async (fastify) => {
     const request = new paypal.orders.OrdersCreateRequest();
     request.requestBody(buildPaymentBody(order.id, order.products, order.total));
     const { statusCode, result } = await client.execute(request);
+
     if (statusCode !== 201) {
       fastify.log.error(result);
       throw fastify.httpErrors.internalServerError();
     }
+
+    return result;
+  };
+
+  const capturePayment = async (transactionId: string): Promise<PayPalCapture> => {
+    const request = new paypal.orders.OrdersCaptureRequest(transactionId);
+    request.requestBody({});
+    const { statusCode, result } = await client.execute(request);
+
+    if (statusCode !== 201) {
+      fastify.log.error(result);
+      throw fastify.httpErrors.internalServerError();
+    }
+
     return result;
   };
 
   fastify.decorate('paypal', {
     createPayment,
+    capturePayment,
   });
 }, {
   name: 'paypal-gateway',
